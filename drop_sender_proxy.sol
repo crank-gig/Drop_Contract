@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
+
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "./MultiSigAdmin.sol";
+
 
 contract TrustedSenderProxy is MultiSigAdmin,ERC1967Proxy {
 
 	uint256 private upgradeId;
 	bool public upgradeStatus;
-	
+
 
 	constructor(
     	address logic,
