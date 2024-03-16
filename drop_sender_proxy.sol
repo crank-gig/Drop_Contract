@@ -8,6 +8,7 @@ contract TrustedSenderProxy is MultiSigAdmin,ERC1967Proxy {
 
 	uint256 private upgradeId;
 	bool public upgradeStatus;
+	
 
 	constructor(
     	address logic,
