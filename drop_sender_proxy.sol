@@ -2,14 +2,21 @@
 pragma solidity ^0.8.22;
 
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "./MultiSigAdmin.sol";
 
-contract TrustedSenderProxy is ERC1967Proxy {
+contract TrustedSenderProxy is MultiSigAdmin,ERC1967Proxy {
+
+	uint256 private upgradeId;
+	bool public upgradeStatus;
 
 	constructor(
     	address logic,
-    	bytes memory data
+    	bytes memory data,
+		address[] memory owners, 
+		uint256 required
 	)
     	ERC1967Proxy(logic, data)
+		MultiSigAdmin(owners, required)
 	{
     	//This constructor is intentionally left empty for ERC1967Proxy pattern.
 	}
@@ -18,16 +25,38 @@ contract TrustedSenderProxy is ERC1967Proxy {
     	revert("Fallback function not allowed");
 	}
 
-	function withdrawBalanceToOwner() external {
+	function shutUpgrade()
+    	external
+	{
+    	// Toggles the upgrade status back to off
+    	upgradeStatus = false;
+	}
 
-    	// Perform a delegate call to the Impementation to verify caller's authority
-    	bytes memory ownerData = abi.encodeWithSignature(
-        	"isOwnerFromProxy(address)",
-        	msg.sender
+	function submitUpgrade(address newLogicContractAddress)
+    	external
+    	_onlyOwner
+    	returns (uint256 transactionId)
+	{
+    	// Encode the function call data for the submitTransaction function
+    	bytes memory data = abi.encodeWithSignature(
+        	"upgradeTo(address)",
+        	newLogicContractAddress
     	);
-    	(, bytes memory statusData) = _implementation().delegatecall(ownerData);
-    	(bool result) = abi.decode(statusData, (bool));
-    	require(result, "You are not authorized to call this function");
+    	transactionId = _submitTransaction(
+        	_implementation(),
+        	0,
+        	data
+    	);
+    	// To keep track of the upgrade transaction Id in the future
+		upgradeId = transactionId;
+		upgradeStatus = true;
+	}
+
+	function submitAdminWithdrawal() 
+		external
+		_onlyOwner
+		returns(uint256 transactionId)
+	{
 
     	// Specify the destination address (msg.sender in this case)
     	address destination = msg.sender;
@@ -38,25 +67,20 @@ contract TrustedSenderProxy is ERC1967Proxy {
     	require(value > 0, "No balance to withdraw");
 
     	// Encode the function call data for the submitTransaction function
-    	bytes memory proxyData = abi.encodeWithSignature(
-        	"executeWithdrawal(address, uint256)",
+    	bytes memory data = abi.encodeWithSignature(
+        	"executeAdminWithdrawal(address, uint256)",
         	destination,
         	value
     	);
-    	bytes memory delegateData = abi.encodeWithSignature(
-        	"_submitTransaction(address,uint256,bytes)",
+    	transactionId = _submitTransaction(
         	address(this),
         	0,
-        	proxyData
+        	data
     	);
 
-    	// Perform a delegate call to the Implementation submitTransaction function
-    	(bool success, ) = _implementation().delegatecall(delegateData);
-
-    	require(success, "Delegatecall to implementation contract failed");
 	}
 
-	function executeWithdrawal(address recipient, uint256 amount)
+	function executeAdminWithdrawal(address recipient, uint256 amount)
     	internal 
 	{
     	(bool success, ) = recipient.call{value: amount}("");
@@ -65,4 +89,18 @@ contract TrustedSenderProxy is ERC1967Proxy {
     	// Optionally emit an event indicating the withdrawal
     	// emit Withdrawal(msg.sender, balance);
 	}
+
+
+	/**
+		getter functions
+	**/
+    // Getter function to retrieve the values of upgrade details for the implementation contract
+    function getUpgradeDetails() external view returns (uint256, bool, uint256) {
+        return (upgradeId, upgradeStatus, requiredConfirmations);
+    }
+
+    function getConfirmationCount(uint256 transactionId) external view returns (uint256) {
+		return transactions[transactionId].confirmations;
+    }
+
 }

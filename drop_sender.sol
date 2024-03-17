@@ -3,9 +3,8 @@ pragma solidity ^0.8.22;
 
 
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import "./MultiSigAdmin.sol";
 
-contract TrustedSenderV1 is MultiSigAdmin,UUPSUpgradeable{
+contract TrustedSenderV1 is UUPSUpgradeable{
 	uint256 private constant FEE_PERCENT = 2;
 
 	event SentToRecipient(
@@ -15,16 +14,6 @@ contract TrustedSenderV1 is MultiSigAdmin,UUPSUpgradeable{
     	uint256 fee
 	);
 
-	constructor(address[] memory owners, uint256 required)
-    	MultiSigAdmin(owners, required)
-	{
-    	// Additional constructor logic for TrustedSenderV1, if needed
-	}
-
-
-	function _authorizeUpgrade(address) internal override _onlyOwner {
-    	//Additional authorize upgrade logic, if needed
-	}
 
 	receive() external payable {
     	revert("Fallback function not allowed");
@@ -44,85 +33,44 @@ contract TrustedSenderV1 is MultiSigAdmin,UUPSUpgradeable{
 	}
 
 
-	function isOwnerFromProxy(address potentialOwner) external view returns (bool) {
-    	return isOwner[potentialOwner];
+
+
+	/*
+		Utility Functionalities
+	*/
+
+
+	function _authorizeUpgrade(address) internal override {
+
+
+		//retrieving necessary data from the proxy contract
+    	(bool success, bytes memory data) = msg.sender.call(abi.encodeWithSignature("getUpgradeDetails()"));
+        require(success, "External call failed");
+
+		// Decode the returned data to get the values
+        (uint256 upgradeIdValue, bool upgradeStatusValue, uint256 requiredConfirmationsValue) = abi.decode(data, (uint256, bool, uint256));
+
+		
+    	//requires that the upgradeChecker of the proxy is true; 	
+		//which means the upgrade hasn't ended
+		require(upgradeStatusValue, "No upgrade in process");
+		//require(proxyContract.transactions(upgradeId).confirmations >= requiredConfirmationsValue, "Not enough confirmations");
+
+		// Toggles the upgrade status back to off
+		//proxyAddress.shutUpgrade();
 	}
 
-	function submitUpgrade(address newLogicContractAddress)
-    	external
-    	_onlyOwner
-    	returns (uint256 transactionId)
-	{
-    	transactionId = transactionCount;
-    	transactions[transactionId] = Transaction({
-        	destination: address(this),
-        	value: 0,
-        	data: abi.encodeWithSignature("upgrade(address,uint256)", newLogicContractAddress, transactionId),
-        	executed: false,
-        	confirmations: 1
-    	});
-    	transactionCount++;
-    	isConfirmed[transactionId][msg.sender] = true;
-    	emit Confirmation(msg.sender);
-	}
 
-	function upgrade(address newLogicContractAddress, uint256 transactionId)
-    	internal
-	{
-    	require(
-        	!transactions[transactionId].executed,
-        	"Transaction already executed"
-    	);
+	/*
+		function isOwnerFromProxy(address potentialOwner) 
+			external 
+			view 
+			returns (bool) 
+		{
+			TrustedSenderProxy proxyContract = TrustedSenderProxy(proxyAddress);
+			return proxyContract.isOwner(potentialOwner);
 
-    	// Perform upgrade logic here
-    	(bool success, ) = proxyAddress.delegatecall(abi.encodeWithSignature("upgradeTo(address)", newLogicContractAddress));
+		}
+	*/
 
-    	if (success) {
-        	transactions[transactionId].executed = true;
-        	emit Execution(msg.sender, true);
-    	} else {
-        	// Handle the case where delegatecall failed
-        	// You might revert, log an error, or take other appropriate actions
-        	revert("Delegatecall failed");
-    	}
-	}
-
-	function setProxyAddress(address newProxyAddress)
-    	external
-    	_onlyOwner
-    	returns (uint256 transactionId)
-	{
-    	transactionId = transactionCount;
-    	transactions[transactionId] = Transaction({
-        	destination: address(this),
-        	value: 0,
-        	data: abi.encodeWithSignature("executeSetProxyAddress(address,uint256)", newProxyAddress, transactionId),
-        	executed: false,
-        	confirmations: 1
-    	});
-    	transactionCount++;
-    	isConfirmed[transactionId][msg.sender] = true;
-    	emit Confirmation(msg.sender);
-
-    	if (transactions[transactionId].confirmations >= requiredConfirmations) {
-        	executeTransaction(transactionId);
-    	}
-
-    	return transactionId;
-	}
-
-	function executeSetProxyAddress(address newProxyAddress, uint256 transactionId)
-    	internal
-	{
-    	require(
-        	!transactions[transactionId].executed,
-        	"Transaction already executed"
-    	);
-
-    	// Perform the logic to set the proxy address
-    	proxyAddress = newProxyAddress;
-
-    	transactions[transactionId].executed = true;
-    	emit Execution(msg.sender, true);
-	}
 }

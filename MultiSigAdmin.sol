@@ -3,10 +3,10 @@ pragma solidity ^0.8.22;
 
 contract MultiSigAdmin{
     address[] public owners;
-    address public proxyAddress;
     mapping(address => bool) public isOwner;
     uint256 public requiredConfirmations;
 
+    event Submission(address indexed sender);
     event Confirmation(address indexed sender);
     event Revocation(address indexed sender);
     event Execution(address indexed sender, bool success);
@@ -128,8 +128,8 @@ contract MultiSigAdmin{
         emit Execution(msg.sender, success);
     }
 
-    function _submitTransaction(address destination, uint256 value, bytes calldata data)
-        external
+    function _submitTransaction(address destination, uint256 value, bytes memory data)
+        internal
         _onlyOwner
         returns (uint256 transactionId)
     {
@@ -143,7 +143,7 @@ contract MultiSigAdmin{
         });
         transactionCount++;
         isConfirmed[transactionId][msg.sender] = true;
-        emit Confirmation(msg.sender);
+        emit Submission(msg.sender);
 
         if (transactions[transactionId].confirmations >= requiredConfirmations) {
             executeTransaction(transactionId);
